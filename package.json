@@ -1,0 +1,25 @@
+{
+  "name": "firebase-data-modelling",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "firebase:login": "node_modules/.bin/firebase login",
+    "firebase:init": "node_modules/.bin/firebase init",
+    "functions:build": "cd functions && npm run build:watch",
+    "firebase:emulator": "node_modules/.bin/firebase emulators:start --project demo-project  --only auth,firestore,storage,functions",
+    "firebase:emulator:export-on-exit": "node_modules/.bin/firebase emulators:start --project demo-project --export-on-exit=\"./caches/history/$(date +%Y-%m-%d+%H:%M:%S)\" --only auth,firestore,functions,storage",
+    "firebase:emulator:cache": "node_modules/.bin/firebase emulators:start --project demo-project --import=\"./caches/seeds/seed1\" --export-on-exit=\"./caches/history/$(date +%Y-%m-%d+%H:%M:%S)\" --project demo-project  --only auth,firestore,functions,storage",
+    "test": "jest --detectOpenHandles",
+    "test:watch": "jest --watchAll --detectOpenHandles"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "@types/jest": "^29.5.14",
+    "firebase-tools": "^13.29.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  }
+}

@@ -1,0 +1,295 @@
+rules_version = '2';
+
+function isNow(dt) {
+  return dt is timestamp && dt == request.time;
+}
+function getIncomingAuth() {
+  return request.auth;
+}
+function getIncomingId() {
+  return request.resource.id;
+}
+function getIncomingData() {
+  return request.resource.data;
+}
+function getExistingData() {
+  return resource.data;
+}
+function getParams() {
+  return resource.data;
+}
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow get, list, create, update, delete: if false;
+    }
+    
+    function getTodoGroupDoc(id){
+      return get(/databases/$(database)/documents/todoGroups/$(id)).data;
+    }
+    function getTodoVersionDoc(id){
+      return get(/databases/$(database)/documents/todoVersions/$(id)).data;
+    }
+    function getTodoVersionHistoryDoc(id){
+      return get(/databases/$(database)/documents/todoVersionHistory/$(id)).data;
+    }
+
+    match /randomCollection/{document=**} {
+      allow get, list, create, update, delete: if false;
+    }
+    match /publicNotices/{document=**} {
+      allow get: if true; // PN.G.0.A
+      allow list: if true; // PN.L.0.A
+      allow create: if false; // PN.C.0.D
+      allow update: if false; // PN.U.0.D
+      allow delete: if false; // PN.D.0.D
+    }
+    match /memberNotices/{document=**} {
+      function canGetMemberNotices(){
+        // MN.G.0.A
+        return getIncomingAuth() != null; // MN.G.1.D
+      }
+      function canListMemberNotices(){
+        // MN.L.0.A
+        return getIncomingAuth() != null; // MN.L.1.D
+      }
+      allow get: if canGetMemberNotices();
+      allow list: if canListMemberNotices();
+      allow create: if false; // MN.C.0.D
+      allow update: if false; // MN.U.0.D
+      allow delete: if false; // MN.D.0.D
+    }
+    match /userTodos/{document=**} {
+      function getUserTodosKeys(){
+        return ['id', 'uid', 'task', 'completed', 'createdAt', 'updatedAt'];
+      }
+      function canGetUserTodo(){
+        // UT.G.0.A
+        return getIncomingAuth().uid == getExistingData().uid; // UT.G.1.D - UT.G.1.D.unauth, UT.G.1.D.wrongUser
+      } 
+      function canListUserTodo(){
+        // UT.L.0.A
+        return getIncomingAuth().uid == getParams().uid; // UT.L.1.D - UT.L.1.D.unauth, UT.L.1.D.wrongUser
+      } 
+      function canCreateUserTodo(){
+        let incoming = getIncomingData();
+        let keys = getUserTodosKeys();
+        // UT.C.0.A
+        return incoming.keys().hasAll(keys) // UT.C.1.D
+          && incoming.keys().hasOnly(keys) // UT.C.2.D
+          && getIncomingId() == incoming.id // UT.C.3.D
+          && isNow(incoming.createdAt) // UT.C.4.D
+          && isNow(incoming.updatedAt) // UT.C.5.D
+          && getIncomingAuth().uid == incoming.uid // UT.C.6 - UT.C.6.D.unauth,  UT.C.6.D.wrongUser
+      }
+      function canUpdateUserTodo(){
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let keys = getUserTodosKeys();
+        // UT.U.0.A
+        return incoming.diff(existing).affectedKeys().hasOnly(['task', 'completed', 'updatedAt']) // UT.U.1.D
+          && incoming.keys().hasAll(keys) // UT.U.2.D
+          && incoming.keys().hasOnly(keys) // UT.U.3.D
+          && isNow(incoming.updatedAt) // UT.U.4.D
+          && getIncomingAuth().uid == existing.uid // UT.U.5.D - UT.U.5.D.unauth,  UT.U.5.D.wrongUser
+      }
+      function canDeleteUserTodo(){
+        // UT.D.0.A
+        return getIncomingAuth().uid == getParams().uid; // UT.D.1.D - UT.D.1.D.unauth, UT.D.1.D.wrongUser
+      }
+      allow get: if canGetUserTodo();
+      allow list: if canListUserTodo();
+      allow create: if canCreateUserTodo();
+      allow update: if canUpdateUserTodo();
+      allow delete: if canDeleteUserTodo();
+    }
+    match /todoGroups/{document=**} {
+      function getTodoGroupsKeys(){
+        return ['id', 'uids', 'name', 'createdAt', 'updatedAt'];
+      }
+      function canGetTodoGroup(){
+        // TG.G.0.A
+        return true
+      }
+      function canCreateTodoGroup(){
+        let incoming = getIncomingData();
+        let keys = getTodoGroupsKeys();
+        // TG.C.0.A
+        return incoming.keys().hasAll(keys) // TG.C.1.D
+          && incoming.keys().hasOnly(keys) // TG.C.2.D
+          && getIncomingId() == incoming.id // TG.C.3.D
+          && isNow(incoming.createdAt) // TG.C.4.D
+          && isNow(incoming.updatedAt) // TG.C.5.D
+          && getIncomingAuth().uid in incoming.uids // TG.C.6 - TG.C.6.D.unauth,  TG.C.6.D.wrongUser
+      }
+      allow get: if canGetTodoGroup();
+      allow create: if canCreateTodoGroup();
+      
+      allow list: if false; // TG.L.0.D
+      allow update: if false; // TG.U.0.D
+      allow delete: if false; // TG.D.0.D
+    }
+    match /groupTodos/{document=**} {
+      function getGroupTodosKeys(){
+        return ['id', 'todoGroupId', 'task', 'completed', 'createdAt', 'updatedAt'];
+      }
+      function canGetGroupTodo(){
+        // GT.G.0.A
+        return true
+      }
+      function canCreateGroupTodo(){
+        let incoming = getIncomingData();
+        let keys = getGroupTodosKeys();
+        let todoGroupDoc = getTodoGroupDoc(incoming.todoGroupId);
+        // GT.C.0.A
+        return incoming.keys().hasAll(keys) // GT.C.1.D
+          && incoming.keys().hasOnly(keys) // GT.C.2.D
+          && getIncomingId() == incoming.id // GT.C.3.D
+          && isNow(incoming.createdAt) // GT.C.4.D
+          && isNow(incoming.updatedAt) // GT.C.5.D
+          && getIncomingAuth().uid in todoGroupDoc.uids // GT.C.6 - GT.C.6.D.unauth,  GT.C.6.D.wrongUserTodoGroup, GT.C.6.D.missingTodoGroup
+      }
+      allow get: if canGetGroupTodo();
+      allow create: if canCreateGroupTodo();
+      
+      allow list: if false; // GT.L.0.D
+      allow update: if false; // GT.U.0.D
+      allow delete: if false; // GT.D.0.D
+    }
+
+    match /siteConfig/{document=**} {
+      function getSiteConfigKeys(){
+        return ['id', 'adminUids', 'createdAt', 'updatedAt'];
+      }
+      function canGetSiteConfig(){
+        // SC.G.0.A
+        return getIncomingAuth() != null; // SC.G.1.D
+      }
+      function canCreateSiteConfig(){
+        let incomingId = getIncomingId();
+        let incoming = getIncomingData();
+        let keys = getSiteConfigKeys();
+    
+        // SC.C.0.A
+        return incoming.keys().hasAll(keys) // SC.C.1.D
+          && incoming.keys().hasOnly(keys) // SC.C.2.D
+          && incomingId == incoming.id // SC.C.3.D
+          && incomingId == "unique" // SC.C.4.D
+          && isNow(incoming.createdAt) // SC.C.5.D
+          && isNow(incoming.updatedAt) // SC.C.6.D
+          && getIncomingAuth().uid in incoming.adminUids // SC.C.7 - SC.C.7.D.unauth, SC.C.7.D.wrongUser
+      }
+      allow get: if canGetSiteConfig();
+      allow create: if canCreateSiteConfig();
+      
+      allow list: if false; // SC.L.0.D
+      allow update: if false; // SC.U.0.D
+      allow delete: if false; // SC.D.0.D
+    }
+
+    match /todoVersionHistory/{document=**} {
+      function getTodoVersionHistoryKeys(){
+        return ['id', 'uid', 'versionIds', 'currentVersionNumber', 'createdAt', 'updatedAt'];
+      }
+      function canGetTodoVersionHistory(){
+        // TVH.G.0.A
+        return getIncomingAuth().uid == getExistingData().uid; // TVH.G.1.D - TVH.G.1.D.unauth, TVH.G.1.D.wrongUser
+      }
+      function canCreateTodoVersionHistory(){
+        let incomingId = getIncomingId();
+        let incoming = getIncomingData();
+        let keys = getTodoVersionHistoryKeys();
+    
+        // TVH.C.0.A
+        return incoming.keys().hasAll(keys) // TVH.C.1.D
+          && incoming.keys().hasOnly(keys) // TVH.C.2.D
+          && isNow(incoming.createdAt) // TVH.C.3.D
+          && isNow(incoming.updatedAt) // TVH.C.4.D
+          && getIncomingAuth().uid == incoming.uid // TVH.C.5 - TVH.C.5.D.unauth, TVH.C.5.D.wrongUser
+          && incomingId == incoming.id // TVH.C.6.D
+          && incoming.versionIds.size() == 0 // TVH.C.7.D 
+          && incoming.currentVersionNumber == 0 // TVH.C.8.D 
+      }
+      function canUpdateTodoVersionHistory(){
+        let incomingId = getIncomingId();
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let keys = getTodoVersionHistoryKeys();
+        let newVersionId = incomingId + '_' + string(existing.currentVersionNumber + 1);
+        let changedVersionIds = incoming.versionIds.diff(existing.versionIds).affectedKeys();
+        let newTodoVersion = getTodoVersionDoc(newVersionId);
+    
+        // TVH.U.0.A
+        return incoming.keys().hasAll(keys) // TVH.U.1.D
+          && incoming.keys().hasOnly(keys) // TVH.U.2.D
+          && incoming.diff(existing).affectedKeys().hasOnly(['versionIds', 'currentVersionNumber', 'updatedAt']) // TVH.U.3.D
+          && isNow(incoming.updatedAt) // TVH.U.4.D
+          && getIncomingAuth().uid == existing.uid // TVH.U.5 - TVH.U.5.D.unauth, TVH.U.5.D.wrongUser
+          && existing.currentVersionNumber + 1 == incoming.currentVersionNumber // TVH.U.6.D 
+          && existing.currentVersionNumber + 1 == incoming.versionIds.size() // TVH.U.7.D 
+          && newVersionId in changedVersionIds // TVH.U.8.D 
+          && changedVersionIds.size() == 1 // TVH.U.9.D 
+          && newTodoVersion.id == newVersionId  // TVH.U.10.D 
+      } 
+      allow get: if canGetTodoVersionHistory();
+      allow create: if canCreateTodoVersionHistory();
+      allow update: if canUpdateTodoVersionHistory();
+      
+      allow list: if false; // TVH.L.0.D
+      allow delete: if false;// TVH.D.0.D
+    }
+
+    match /todoVersions/{document=**} {
+      function getTodoVersionKeys(){
+        return ['id', 'content', 'versionHistoryId', 'versionNumber', 'complete', 'createdAt', 'updatedAt']; 
+      }
+      function canGetTodoVersionAsOwner(){
+        let existing = getExistingData();
+        let todoVersionHistoryDoc = getTodoVersionHistoryDoc(existing.versionHistoryId);
+        let auth = getIncomingAuth();
+        // TV.G.owner.0.A 
+        return todoVersionHistoryDoc.uid == auth.uid // TV.G.owner.1 - TV.G.owner.1.D.unauth, TV.G.owner.1.D.wrongUser
+      }
+      function canGetCurrentTodoVersionIfLoggedIn(){
+        let existing = getExistingData();
+        let todoVersionHistoryDoc = getTodoVersionHistoryDoc(existing.versionHistoryId);
+        let auth = getIncomingAuth();
+        // TV.G.currentVersionLoggedIn.0.A  
+        return auth.uid != null // TV.G.currentVersionLoggedIn.1.D.unauth
+          && existing.id == todoVersionHistoryDoc.id + '_' + string(todoVersionHistoryDoc.currentVersionNumber) // TV.G.currentVersionLoggedIn.2.D
+      }
+      function canGetTodoVersion(){
+        return canGetTodoVersionAsOwner() // TV.G.owner
+          || canGetCurrentTodoVersionIfLoggedIn() // TV.G.currentVersionLoggedIn
+      }
+      function canListTodoVersions(){
+        let params = getParams();
+        let todoVersionHistoryDoc = getTodoVersionHistoryDoc(params.versionHistoryId);
+        // TV.L.0.A
+        return todoVersionHistoryDoc.uid == getIncomingAuth().uid// TV.L.1 - TV.L.1.D.unauth TV.L.1.D.wrongUser 
+      }
+      function canCreateTodoVersion(){
+        let incoming = getIncomingData();
+        let incomingId = getIncomingId();
+        let keys = getTodoVersionKeys();
+        let todoVersionHistoryDoc = getTodoVersionHistoryDoc(incoming.versionHistoryId);
+        // TV.C.0.A
+        return incoming.keys().hasAll(keys) // TV.C.1.D
+          && incoming.keys().hasOnly(keys) // TV.C.2.D
+          && isNow(incoming.createdAt) // TV.C.3.D
+          && isNow(incoming.updatedAt) // TV.C.4.D
+          && getIncomingAuth().uid == todoVersionHistoryDoc.uid // TV.C.5 - TV.C.5.D.unauth, TV.C.5.D.wrongUser
+          && incomingId == incoming.id // TV.C.6.D
+          && incomingId == incoming.versionHistoryId + '_' + string(incoming.versionNumber) // TV.C.7.D
+          && incomingId == todoVersionHistoryDoc.id + '_' + string(todoVersionHistoryDoc.currentVersionNumber + 1) // TV.C.8.D
+      }
+      allow get: if canGetTodoVersion();
+      allow create: if canCreateTodoVersion();
+      allow list: if canListTodoVersions(); 
+      
+      allow update: if false; // TV.U.0.D
+      allow delete: if false; // TV.D.0.D
+    }
+  }
+}
